@@ -1,0 +1,30 @@
+{
+  "product": "AuraGlow (CJdropshipping SKU CJJT180225501AZ)",
+  "kind": "Photographic parametric reconstruction — not a 3D scan",
+  "generatedBy": "scripts/build-model.mts",
+  "units": "node scale 0.01 => 1 unit ≈ 10 mm",
+  "dimensionsMm": {
+    "w": 70,
+    "d": 70,
+    "h": 145
+  },
+  "filamentConfigurations": [
+    {
+      "id": "loop",
+      "label": "Single suspended loop"
+    },
+    {
+      "id": "sculpt",
+      "label": "Styled double bend"
+    }
+  ],
+  "parts": [
+    "cover (transparent PC, lathed shell with rolled rim)",
+    "base (ABS rounded square, soft bevel)",
+    "touch_control_groove + touch_control_face (front)",
+    "indicator_pinhole (front, below control)",
+    "usbc_inlet (rear face)",
+    "filament (tube along CatmullRom curve) + brass anchor/seat/bead",
+    "underside_pad"
+  ]
+}

@@ -1,0 +1,291 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Anchorium Fallback";
+  src: local("Georgia");
+}
+
+@theme {
+  --color-gold: #d6a441;
+  --color-gold-deep: #b9862a;
+  --color-gold-soft: #e6c07a;
+  --color-amber: #ffb52e;
+  --color-amber-glow: #ffcf6b;
+  --color-champagne: #f4e4b8;
+  --color-ivory: #fff9ed;
+  --color-ivory-soft: #fbf3e2;
+  --color-charcoal: #171510;
+  --color-charcoal-soft: #241f16;
+  --color-charcoal-mute: #3a3226;
+  --color-ink: #2b2620;
+  --color-white: #ffffff;
+
+  --font-display: var(--font-serif, "Fraunces"), "Anchorium Fallback", Georgia, serif;
+  --font-sans: var(--font-sans-extra, "Manrope"), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --shadow-luxe: 0 30px 80px -40px rgba(23, 21, 16, 0.45);
+  --shadow-card: 0 18px 40px -28px rgba(23, 21, 16, 0.35);
+  --shadow-glow: 0 0 60px -12px rgba(255, 181, 46, 0.55);
+
+  --ease-luxe: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-ivory);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-weight: 400;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background: var(--color-champagne);
+    color: var(--color-charcoal);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+}
+
+@layer components {
+  .shell {
+    width: 100%;
+    margin-inline: auto;
+    max-width: 80rem;
+    padding-inline: 1.25rem;
+  }
+
+  @media (min-width: 768px) {
+    .shell {
+      padding-inline: 2rem;
+    }
+  }
+
+  .eyebrow {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.34em;
+    text-transform: uppercase;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.55rem;
+    border-radius: 999px;
+    padding: 0.85rem 1.6rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    transition:
+      transform 0.35s var(--ease-luxe),
+      box-shadow 0.35s var(--ease-luxe),
+      background-color 0.3s ease,
+      color 0.3s ease,
+      border-color 0.3s ease;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .btn:active {
+    transform: translateY(1px) scale(0.995);
+  }
+
+  .btn-gold {
+    background-image: linear-gradient(120deg, #d6a441 0%, #f5c84c 48%, #d6a441 100%);
+    color: #17150c;
+    box-shadow: 0 14px 34px -18px rgba(214, 164, 65, 0.9);
+  }
+
+  .btn-gold:hover {
+    box-shadow: 0 20px 44px -18px rgba(214, 164, 65, 1);
+    transform: translateY(-1px);
+  }
+
+  .btn-ink {
+    background: var(--color-charcoal);
+    color: var(--color-ivory);
+  }
+
+  .btn-ink:hover {
+    background: #241f16;
+    transform: translateY(-1px);
+  }
+
+  .btn-outline {
+    border: 1px solid rgba(23, 21, 16, 0.24);
+    color: var(--color-charcoal);
+    background: transparent;
+  }
+
+  .btn-outline:hover {
+    border-color: var(--color-gold);
+    color: var(--color-gold-deep);
+  }
+
+  .btn-outline-light {
+    border: 1px solid rgba(244, 228, 184, 0.36);
+    color: var(--color-champagne);
+    background: rgba(255, 249, 237, 0.04);
+  }
+
+  .btn-outline-light:hover {
+    border-color: var(--color-amber);
+    color: var(--color-amber-glow);
+  }
+
+  .btn[disabled],
+  .btn[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+
+  .card {
+    border: 1px solid rgba(23, 21, 16, 0.08);
+    border-radius: 1.5rem;
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(6px);
+  }
+
+  .card-dark {
+    border: 1px solid rgba(244, 228, 184, 0.14);
+    border-radius: 1.5rem;
+    background: linear-gradient(160deg, rgba(36, 31, 22, 0.96), rgba(23, 21, 16, 0.99));
+    box-shadow: var(--shadow-luxe);
+  }
+
+  .field {
+    width: 100%;
+    border-radius: 0.9rem;
+    border: 1px solid rgba(23, 21, 16, 0.16);
+    background: #fff;
+    padding: 0.8rem 0.95rem;
+    font-size: 0.95rem;
+    color: var(--color-charcoal);
+    transition:
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+
+  .field::placeholder {
+    color: #a89e8c;
+  }
+
+  .field:focus {
+    border-color: var(--color-gold);
+    box-shadow: 0 0 0 3px rgba(214, 164, 65, 0.16);
+    outline: none;
+  }
+
+  .field-label {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(23, 21, 16, 0.56);
+    margin-bottom: 0.4rem;
+  }
+
+  .rule-gold {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(214, 164, 65, 0.5), transparent);
+  }
+
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.22;
+    background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+    background-size: 4px 4px;
+    mix-blend-mode: overlay;
+  }
+}
+
+@utility text-balance-tight {
+  text-wrap: balance;
+}
+
+/* Scroll-reveal primitives (used before JS hydrates / when reduced motion is on) */
+.reveal-ready [data-reveal] {
+  opacity: 0;
+  transform: translateY(28px);
+}
+
+.reveal-ready [data-reveal].is-visible {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 0.9s var(--ease-luxe),
+    transform 0.9s var(--ease-luxe);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .reveal-ready [data-reveal] {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
+/* Marigold pattern used by the festive campaign */
+.festive-pattern {
+  background-image:
+    radial-gradient(circle at 12% 18%, rgba(255, 181, 46, 0.16), transparent 42%),
+    radial-gradient(circle at 88% 12%, rgba(214, 164, 65, 0.14), transparent 38%),
+    radial-gradient(circle at 50% 108%, rgba(244, 228, 184, 0.12), transparent 50%);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
