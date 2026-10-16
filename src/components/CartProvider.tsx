@@ -10,14 +10,16 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { product } from "@/lib/config";
+import { getVariantShopifyId, product } from "@/lib/config";
 import { computeTotals, type CartLine, type Totals } from "@/lib/money";
 
 const STORAGE_KEY = "anchorium.cart.v2";
+const SHOPIFY_CART_KEY = "anchorium.shopify.cartId";
+const SHOPIFY_CHECKOUT_URL_KEY = "anchorium.shopify.checkoutUrl";
 
 type StoredLine = CartLine;
 
-type CartContextValue = {
+export type CartContextValue = {
   lines: CartLine[];
   totals: Totals;
   hydrated: boolean;
@@ -27,6 +29,10 @@ type CartContextValue = {
   clear: () => void;
   toast: string | null;
   dismissToast: () => void;
+  checkoutUrl: string | null;
+  isSyncing: boolean;
+  proceedToCheckout: () => Promise<void>;
+  buyNow: (line: Omit<CartLine, "lineId">) => Promise<void>;
 };
 
 const CartContext = createContext<CartContextValue | null>(null);
@@ -35,6 +41,9 @@ const lineKey = (variantId: string, outletId: string) => `${variantId}::${outlet
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [lines, setLines] = useState<StoredLine[]>([]);
+  const [cartId, setCartId] = useState<string | null>(null);
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -43,6 +52,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
+      const storedCartId = window.localStorage.getItem(SHOPIFY_CART_KEY);
+      const storedCheckoutUrl = window.localStorage.getItem(SHOPIFY_CHECKOUT_URL_KEY);
+
+      if (storedCartId) setCartId(storedCartId);
+      if (storedCheckoutUrl) setCheckoutUrl(storedCheckoutUrl);
+
       if (raw) {
         const parsed = JSON.parse(raw) as StoredLine[];
         if (Array.isArray(parsed)) {
@@ -55,6 +70,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
                 ...l,
                 variantId: matched.id,
                 variantLabel: matched.label,
+                shopifyVariantId: l.shopifyVariantId || matched.shopifyVariantId || getVariantShopifyId(matched.id),
                 quantity: clampQty(l.quantity),
                 lineId: lineKey(matched.id, l.outletId ?? product.outlet.id),
               };
@@ -68,14 +84,75 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setHydrated(true);
   }, []);
 
+  /* --- sync lines to local storage --- */
   useEffect(() => {
     if (!hydrated) return;
     try {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(lines));
     } catch {
-      /* storage may be unavailable (private mode) — cart still works in-memory */
+      /* storage may be unavailable */
     }
   }, [lines, hydrated]);
+
+  /* --- sync lines with Shopify Storefront Cart API --- */
+  const syncWithShopify = useCallback(async (currentLines: StoredLine[]): Promise<string | null> => {
+    if (currentLines.length === 0) {
+      setCheckoutUrl(null);
+      setCartId(null);
+      try {
+        window.localStorage.removeItem(SHOPIFY_CART_KEY);
+        window.localStorage.removeItem(SHOPIFY_CHECKOUT_URL_KEY);
+      } catch {}
+      return null;
+    }
+
+    setIsSyncing(true);
+    try {
+      const formattedLines = currentLines.map((l) => ({
+        merchandiseId: l.shopifyVariantId || getVariantShopifyId(l.variantId),
+        quantity: l.quantity,
+      }));
+
+      const res = await fetch("/api/shopify/cart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create", lines: formattedLines }),
+      });
+
+      const data = await res.json();
+      if (data?.cart?.checkoutUrl) {
+        const url = data.cart.checkoutUrl;
+        const newId = data.cart.id;
+        setCheckoutUrl(url);
+        setCartId(newId);
+        try {
+          window.localStorage.setItem(SHOPIFY_CART_KEY, newId);
+          window.localStorage.setItem(SHOPIFY_CHECKOUT_URL_KEY, url);
+        } catch {}
+        return url;
+      }
+    } catch (err) {
+      console.warn("[CartProvider] Failed to sync with Shopify Cart API:", err);
+    } finally {
+      setIsSyncing(false);
+    }
+    return null;
+  }, []);
+
+  // Sync with Shopify whenever lines change and hydrated
+  const initialSyncDone = useRef(false);
+  useEffect(() => {
+    if (!hydrated) return;
+    // Debounce cart sync to avoid spamming the Shopify Cart API
+    const timer = setTimeout(() => {
+      if (initialSyncDone.current || lines.length > 0) {
+        syncWithShopify(lines);
+      }
+      initialSyncDone.current = true;
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [lines, hydrated, syncWithShopify]);
 
   const pushToast = useCallback((message: string) => {
     setToast(message);
@@ -85,27 +162,85 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const add = useCallback<CartContextValue["add"]>(
     (line, opts) => {
+      const shopifyVariantId =
+        line.shopifyVariantId || getVariantShopifyId(line.variantId);
       const id = lineKey(line.variantId, line.outletId);
+
+      let nextLines: StoredLine[] = [];
       setLines((prev) => {
         const existing = prev.find((l) => l.lineId === id);
         const nextQty = clampQty((existing?.quantity ?? 0) + line.quantity);
         if (existing) {
-          return prev.map((l) => (l.lineId === id ? { ...l, quantity: nextQty } : l));
+          nextLines = prev.map((l) =>
+            l.lineId === id ? { ...l, quantity: nextQty, shopifyVariantId } : l,
+          );
+        } else {
+          nextLines = [...prev, { ...line, shopifyVariantId, quantity: nextQty, lineId: id }];
         }
-        return [...prev, { ...line, quantity: nextQty, lineId: id }];
+        return nextLines;
       });
+
       pushToast(
         `${product.name} · ${line.variantLabel} added — ${plural(line.quantity)} in cart`,
       );
+
       const target = opts?.redirectTo;
-      if (target && typeof window !== "undefined") {
+      if (target === "checkout") {
+        setIsSyncing(true);
+        syncWithShopify(nextLines).then((url) => {
+          if (url && typeof window !== "undefined") {
+            window.location.href = url;
+          } else if (typeof window !== "undefined") {
+            window.location.href = "/checkout";
+          }
+        });
+      } else if (target === "cart" && typeof window !== "undefined") {
         window.setTimeout(() => {
-          window.location.href = target === "checkout" ? "/checkout" : "/cart";
+          window.location.href = "/cart";
         }, 420);
       }
     },
-    [pushToast],
+    [pushToast, syncWithShopify],
   );
+
+  const buyNow = useCallback(
+    async (line: Omit<CartLine, "lineId">) => {
+      const shopifyVariantId =
+        line.shopifyVariantId || getVariantShopifyId(line.variantId);
+      const id = lineKey(line.variantId, line.outletId);
+      const singleLine = [{ ...line, shopifyVariantId, lineId: id, quantity: line.quantity }];
+
+      setIsSyncing(true);
+      try {
+        const url = await syncWithShopify(singleLine);
+        if (url && typeof window !== "undefined") {
+          window.location.href = url;
+          return;
+        }
+      } catch (err) {
+        console.warn("[buyNow] Error creating checkout:", err);
+      }
+      if (typeof window !== "undefined") {
+        window.location.href = "/checkout";
+      }
+    },
+    [syncWithShopify],
+  );
+
+  const proceedToCheckout = useCallback(async () => {
+    if (checkoutUrl) {
+      window.location.href = checkoutUrl;
+      return;
+    }
+
+    setIsSyncing(true);
+    const url = await syncWithShopify(lines);
+    if (url) {
+      window.location.href = url;
+    } else {
+      window.location.href = "/checkout";
+    }
+  }, [checkoutUrl, lines, syncWithShopify]);
 
   const setQuantity = useCallback((lineId: string, quantity: number) => {
     setLines((prev) =>
@@ -119,7 +254,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setLines((prev) => prev.filter((l) => l.lineId !== lineId));
   }, []);
 
-  const clear = useCallback(() => setLines([]), []);
+  const clear = useCallback(() => {
+    setLines([]);
+    setCartId(null);
+    setCheckoutUrl(null);
+    try {
+      window.localStorage.removeItem(STORAGE_KEY);
+      window.localStorage.removeItem(SHOPIFY_CART_KEY);
+      window.localStorage.removeItem(SHOPIFY_CHECKOUT_URL_KEY);
+    } catch {}
+  }, []);
 
   const totals = useMemo(() => computeTotals(lines), [lines]);
 
@@ -129,20 +273,33 @@ export function CartProvider({ children }: { children: ReactNode }) {
       totals,
       hydrated,
       add,
+      buyNow,
+      proceedToCheckout,
       setQuantity,
       remove,
       clear,
       toast,
+      checkoutUrl,
+      isSyncing,
       dismissToast: () => setToast(null),
     }),
-    [lines, totals, hydrated, add, setQuantity, remove, clear, toast],
+    [
+      lines,
+      totals,
+      hydrated,
+      add,
+      buyNow,
+      proceedToCheckout,
+      setQuantity,
+      remove,
+      clear,
+      toast,
+      checkoutUrl,
+      isSyncing,
+    ],
   );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
-}
-
-function optsredirectToPath(target: "cart" | "checkout") {
-  return target === "checkout" ? "/checkout" : "/cart";
 }
 
 function clampQty(q: number) {

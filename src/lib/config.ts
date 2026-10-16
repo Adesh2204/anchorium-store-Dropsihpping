@@ -54,6 +54,7 @@ export type ColorVariant = {
   image: string;
   inStock: boolean;
   priceDeltaPaise: number;
+  shopifyVariantId: string;
 };
 
 export const PRODUCT_CONFIG = {
@@ -93,8 +94,8 @@ export const product = {
   /** Prices stored in paise so the maths can never drift. */
   pricing: {
     currency: INR,
-    mrpPaise: 499_900,
-    sellPaise: 399_900,
+    mrpPaise: 499_900 as number,
+    sellPaise: 399_900 as number,
   },
   campaign: {
     name: "Diwali Glow Sale",
@@ -102,7 +103,7 @@ export const product = {
     /** Real, fixed configured end date. Do not reset to manufacture urgency. */
     endsAt: "2026-11-11T23:59:59+05:30",
   },
-  /** Authentic base finishes matching the exact color names shown on CJ. */
+  /** Authentic base finishes matching the exact color names shown on CJ and mapped to Shopify variants. */
   colorVariants: [
     {
       id: "dark-grey",
@@ -110,8 +111,11 @@ export const product = {
       supplierLabel: "Dark Grey",
       swatch: "#505254",
       image: "/product/04_grey_lamp_studio.png",
-      inStock: true,
-      priceDeltaPaise: 0,
+      inStock: true as boolean,
+      priceDeltaPaise: 0 as number,
+      shopifyVariantId:
+        process.env.NEXT_PUBLIC_SHOPIFY_VARIANT_GREY ||
+        "gid://shopify/ProductVariant/auraglow-dark-grey",
     },
     {
       id: "green",
@@ -119,8 +123,11 @@ export const product = {
       supplierLabel: "Green",
       swatch: "#1D5236",
       image: "/product/02_green_lamp_dimensions.png",
-      inStock: true,
-      priceDeltaPaise: 0,
+      inStock: true as boolean,
+      priceDeltaPaise: 0 as number,
+      shopifyVariantId:
+        process.env.NEXT_PUBLIC_SHOPIFY_VARIANT_GREEN ||
+        "gid://shopify/ProductVariant/auraglow-green",
     },
     {
       id: "yellow",
@@ -128,10 +135,13 @@ export const product = {
       supplierLabel: "Warm Yellow / Light",
       swatch: "#F5B800",
       image: "/product/03_yellow_lamp_studio.png",
-      inStock: true,
-      priceDeltaPaise: 0,
+      inStock: true as boolean,
+      priceDeltaPaise: 0 as number,
+      shopifyVariantId:
+        process.env.NEXT_PUBLIC_SHOPIFY_VARIANT_YELLOW ||
+        "gid://shopify/ProductVariant/auraglow-yellow",
     },
-  ] satisfies ColorVariant[],
+  ] as ColorVariant[],
   video: "/product/auraglow-showcase.mp4",
   heroImage: "/product/01_three_colour_studio_lineup.png",
   outlet: { id: "usb-type-c", label: PRODUCT_CONFIG.interface, supplierLabel: "USB" },
@@ -227,12 +237,15 @@ export const product = {
  * Derived pricing — single formula used by every page
  * ------------------------------------------------------------------ */
 
-export function pricingFor(quantity = 1) {
-  const { mrpPaise, sellPaise } = product.pricing;
+export function pricingFor(
+  quantity = 1,
+  pricingOverride?: { mrpPaise: number; sellPaise: number },
+) {
+  const { mrpPaise, sellPaise } = pricingOverride ?? product.pricing;
   const unitMrp = mrpPaise * quantity;
   const unitSell = sellPaise * quantity;
   const discountPaise = unitMrp - unitSell;
-  const discountPercent = Math.round((discountPaise / unitMrp) * 100);
+  const discountPercent = unitMrp > 0 ? Math.round((discountPaise / unitMrp) * 100) : 0;
   const savingsPerUnitPaise = mrpPaise - sellPaise;
   return {
     mrpPaise,
@@ -251,6 +264,88 @@ export function pricingFor(quantity = 1) {
 export function variantImageFor(variantId?: string): string {
   const match = product.colorVariants.find((v) => v.id === variantId);
   return match?.image ?? "/product/01_three_colour_studio_lineup.png";
+}
+
+export function getVariantShopifyId(variantId?: string): string {
+  const match = product.colorVariants.find((v) => v.id === variantId);
+  return (
+    match?.shopifyVariantId ||
+    process.env.NEXT_PUBLIC_SHOPIFY_VARIANT_GREY ||
+    "gid://shopify/ProductVariant/auraglow-dark-grey"
+  );
+}
+
+export type ProductConfig = typeof product;
+
+/**
+ * Fetch live product prices and stock levels from Shopify.
+ * If Shopify returns live data, merges it with the local product configuration.
+ * Falls back safely to configured product defaults if offline or Shopify is unreachable.
+ */
+export async function getLiveProductConfig(): Promise<ProductConfig> {
+  try {
+    const { getShopifyProduct, mapColorToShopifyVariant } = await import("./shopify");
+    const liveShopify = await getShopifyProduct(product.slug);
+
+    if (!liveShopify) {
+      return product;
+    }
+
+    const liveMinPrice = parseFloat(liveShopify.priceRange.minVariantPrice.amount);
+    const liveSellPaise: number = Number.isFinite(liveMinPrice) && liveMinPrice > 0
+      ? Math.round(liveMinPrice * 100)
+      : product.pricing.sellPaise;
+
+    let liveMrpPaise: number = product.pricing.mrpPaise;
+    if (liveShopify.compareAtPriceRange?.minVariantPrice?.amount) {
+      const parsedCompare = parseFloat(liveShopify.compareAtPriceRange.minVariantPrice.amount);
+      if (Number.isFinite(parsedCompare) && parsedCompare > 0) {
+        liveMrpPaise = Math.round(parsedCompare * 100);
+      }
+    }
+
+    const updatedVariants = product.colorVariants.map((v) => {
+      const shopifyVariantId = mapColorToShopifyVariant(v.id, liveShopify.variants);
+      const matchedVariant = liveShopify.variants.find((sv) => sv.id === shopifyVariantId);
+
+      const inStock = matchedVariant
+        ? Boolean(
+            matchedVariant.availableForSale &&
+              (matchedVariant.quantityAvailable === null ||
+                matchedVariant.quantityAvailable === undefined ||
+                matchedVariant.quantityAvailable > 0),
+          )
+        : v.inStock;
+
+      let priceDeltaPaise = v.priceDeltaPaise;
+      if (matchedVariant) {
+        const vPrice = parseFloat(matchedVariant.price.amount);
+        if (Number.isFinite(vPrice)) {
+          priceDeltaPaise = Math.round(vPrice * 100) - liveSellPaise;
+        }
+      }
+
+      return {
+        ...v,
+        inStock,
+        priceDeltaPaise,
+        shopifyVariantId,
+      };
+    });
+
+    return {
+      ...product,
+      pricing: {
+        ...product.pricing,
+        sellPaise: liveSellPaise,
+        mrpPaise: liveMrpPaise,
+      },
+      colorVariants: updatedVariants,
+    };
+  } catch (err) {
+    console.warn("[getLiveProductConfig] Falling back to default product configuration:", err);
+    return product;
+  }
 }
 
 /* ------------------------------------------------------------------ *

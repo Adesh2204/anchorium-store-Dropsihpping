@@ -5,20 +5,23 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Accordion, PriceBlock, QtyStepper } from "@/components/ui";
 import { useCart } from "@/components/CartProvider";
-import { pricingFor, product, shipping } from "@/lib/config";
+import { pricingFor, product, shipping, type ProductConfig } from "@/lib/config";
 import { formatPaise } from "@/lib/money";
 
 export default function BuyPanel({
   variantId: controlledVariantId,
   onVariantChange,
+  productConfig,
 }: {
   variantId?: string;
   onVariantChange?: (id: string) => void;
+  productConfig?: ProductConfig;
 } = {}) {
-  const { add, totals } = useCart();
-  const inStock = product.colorVariants.filter((v) => v.inStock);
+  const currentProduct = productConfig ?? product;
+  const { add, totals, buyNow, isSyncing } = useCart();
+  const inStock = currentProduct.colorVariants.filter((v) => v.inStock);
   const [internalVariantId, setInternalVariantId] = useState(
-    inStock[0]?.id ?? product.colorVariants[0].id,
+    inStock[0]?.id ?? currentProduct.colorVariants[0].id,
   );
   const variantId = controlledVariantId ?? internalVariantId;
   const setVariantId = (id: string) => {
@@ -26,13 +29,14 @@ export default function BuyPanel({
     onVariantChange?.(id);
   };
   const [quantity, setQuantity] = useState(1);
-  const price = pricingFor(quantity);
-  const selected = product.colorVariants.find((v) => v.id === variantId) ?? product.colorVariants[0];
+  const price = pricingFor(quantity, currentProduct.pricing);
+  const selected = currentProduct.colorVariants.find((v) => v.id === variantId) ?? currentProduct.colorVariants[0];
 
   const line = {
     variantId: selected.id,
     variantLabel: selected.label,
-    outletId: product.outlet.id,
+    shopifyVariantId: selected.shopifyVariantId,
+    outletId: currentProduct.outlet.id,
     quantity,
   };
 
@@ -40,18 +44,18 @@ export default function BuyPanel({
 
   return (
     <div className="card !rounded-[1.75rem] p-6 md:p-8">
-      <p className="eyebrow text-gold-deep">{product.campaign.active ? product.campaign.name : "AuraGlow"}</p>
+      <p className="eyebrow text-gold-deep">{currentProduct.campaign.active ? currentProduct.campaign.name : "AuraGlow"}</p>
       <h1 className="mt-3 text-[clamp(1.9rem,4.2vw,2.7rem)] leading-[1.05] text-charcoal">
-        {product.title}
+        {currentProduct.title}
       </h1>
-      <p className="mt-4 text-[0.95rem] leading-relaxed text-charcoal/70">{product.shortDescription}</p>
+      <p className="mt-4 text-[0.95rem] leading-relaxed text-charcoal/70">{currentProduct.shortDescription}</p>
 
       <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.72rem] text-charcoal/50">
         <span>In stock · {inStock.length} finishes</span>
         <span aria-hidden>·</span>
-        <span>SKU {product.supplier.sku}</span>
+        <span>SKU {currentProduct.supplier.sku}</span>
         <span aria-hidden>·</span>
-        <span>Sourced via {product.supplier.source}</span>
+        <span>Sourced via {currentProduct.supplier.source}</span>
       </div>
 
       <div className="mt-6 border-y border-charcoal/8 py-6">
@@ -62,7 +66,7 @@ export default function BuyPanel({
       <fieldset className="mt-7">
         <legend className="field-label">Base finish — 3 authentic colours</legend>
         <div className="mt-1 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-          {product.colorVariants.map((v) => (
+          {currentProduct.colorVariants.map((v) => (
             <button
               key={v.id}
               type="button"
@@ -86,35 +90,38 @@ export default function BuyPanel({
           ))}
         </div>
         <p className="mt-3 text-[0.72rem] leading-relaxed text-charcoal/50">
-          Select a finish above to preview its studio photograph in the gallery. All three finishes share the same
-          high-transparency PC cylinder and warm 2700 K flexible filament.
+          Select a finish above to preview its studio photograph in the gallery. Each colourway connects directly
+          to its live Shopify inventory.
         </p>
       </fieldset>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-charcoal/10 bg-white px-4 py-3">
         <span className="text-[0.66rem] font-semibold uppercase tracking-[0.2em] text-charcoal/45">Power</span>
-        <span className="text-sm font-medium text-charcoal">{product.outlet.label} (listed as USB)</span>
+        <span className="text-sm font-medium text-charcoal">{currentProduct.outlet.label} (listed as USB)</span>
       </div>
 
       {/* ---------------------------------------------------------- actions */}
       <div className="mt-7 flex flex-wrap items-center justify-between gap-4">
-        <QtyStepper value={quantity} onChange={setQuantity} max={product.maxQuantityPerOrder} />
-        <p className="text-[0.7rem] text-charcoal/50">Max {product.maxQuantityPerOrder} per order</p>
+        <QtyStepper value={quantity} onChange={setQuantity} max={currentProduct.maxQuantityPerOrder} />
+        <p className="text-[0.7rem] text-charcoal/50">Max {currentProduct.maxQuantityPerOrder} per order</p>
       </div>
 
       <motion.div className="mt-6 grid gap-3 sm:grid-cols-2" initial={false}>
-        <button type="button" className="btn btn-ink w-full" onClick={() => add(line, { redirectTo: "cart" })}>
+        <button
+          type="button"
+          disabled={!selected.inStock || isSyncing}
+          className="btn btn-ink w-full"
+          onClick={() => add(line, { redirectTo: "cart" })}
+        >
           Add to cart
         </button>
         <button
           type="button"
+          disabled={!selected.inStock || isSyncing}
           className="btn btn-gold w-full"
-          onClick={() => {
-            add(line);
-            window.setTimeout(() => (window.location.href = "/checkout"), 460);
-          }}
+          onClick={() => buyNow(line)}
         >
-          Buy now · {formatPaise(price.sellPaise)}
+          {isSyncing ? "Redirecting..." : `Buy now · ${formatPaise(price.sellPaise)}`}
         </button>
       </motion.div>
 

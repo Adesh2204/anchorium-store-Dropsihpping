@@ -18,7 +18,7 @@ export default function CheckoutPage() {
             <p className="eyebrow text-gold-deep">Secure checkout</p>
             <h1 className="mt-3 text-[clamp(2rem,4.4vw,3rem)] leading-tight text-charcoal">Almost lit.</h1>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-charcoal/60">
-              100% Prepaid premium product (via UPI, Cards, Net Banking){payment.liveConfiguredOnServer ? " via Razorpay" : ""}. Standard Insured Delivery:{" "}
+              100% Prepaid premium product (via UPI, Cards, Net Banking) processed securely via Shopify Checkout. Standard Insured Delivery:{" "}
               {shipping.estimate.minBusinessDays}–{shipping.estimate.maxBusinessDays} business days across India, with shipping{" "}
               <span className="line-through text-charcoal/40">₹{(shipping.standardPaise / 100).toFixed(0)}</span>{" "}
               <strong className="font-semibold text-emerald-700">FREE on your first order</strong>.

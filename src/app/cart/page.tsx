@@ -9,7 +9,7 @@ import { pricingFor, product, shipping, variantImageFor } from "@/lib/config";
 import { formatPaise, unitMrpPaise, unitSellPaise } from "@/lib/money";
 
 export default function CartPage() {
-  const { lines, totals, setQuantity, remove, clear, hydrated } = useCart();
+  const { lines, totals, setQuantity, remove, clear, hydrated, proceedToCheckout, isSyncing } = useCart();
   const single = pricingFor(1);
 
   return (
@@ -174,9 +174,14 @@ export default function CartPage() {
                 Inclusive of all taxes · Free first-order delivery
               </p>
 
-              <Link href="/checkout" className="btn btn-gold mt-6 w-full">
-                Proceed to checkout
-              </Link>
+              <button
+                type="button"
+                onClick={proceedToCheckout}
+                disabled={isSyncing}
+                className="btn btn-gold mt-6 w-full"
+              >
+                {isSyncing ? "Preparing Shopify checkout..." : "Proceed to Shopify checkout"}
+              </button>
               <Link href={product.viewerPath} className="btn btn-outline mt-3 w-full">
                 Inspect in 3D first
               </Link>

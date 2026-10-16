@@ -670,7 +670,13 @@ export default function HomePage() {
                   type="button"
                   className="btn btn-outline-light"
                   onClick={() =>
-                    add({ variantId: variant.id, variantLabel: variant.label, outletId: product.outlet.id, quantity: 1 })
+                    add({
+                      variantId: variant.id,
+                      variantLabel: variant.label,
+                      shopifyVariantId: variant.shopifyVariantId,
+                      outletId: product.outlet.id,
+                      quantity: 1,
+                    })
                   }
                 >
                   Quick add · {variant.label}
@@ -779,7 +785,13 @@ export default function HomePage() {
                   className="btn btn-gold"
                   onClick={() =>
                     add(
-                      { variantId: variant.id, variantLabel: variant.label, outletId: product.outlet.id, quantity: 1 },
+                      {
+                        variantId: variant.id,
+                        variantLabel: variant.label,
+                        shopifyVariantId: variant.shopifyVariantId,
+                        outletId: product.outlet.id,
+                        quantity: 1,
+                      },
                       { redirectTo: "checkout" },
                     )
                   }

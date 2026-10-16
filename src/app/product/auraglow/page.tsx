@@ -4,7 +4,7 @@ import Image from "next/image";
 import type { GalleryItem } from "@/components/product/ProductGallery";
 import ProductInteractiveSection from "@/components/product/ProductInteractiveSection";
 import { Reveal, ProvenanceNote, TemplateNote } from "@/components/ui";
-import { product } from "@/lib/config";
+import { getLiveProductConfig, product } from "@/lib/config";
 
 export const metadata: Metadata = {
   title: `${product.name} — rechargeable ambient LED lamp · Anchorium Store`,
@@ -143,7 +143,9 @@ const gallery: GalleryItem[] = [
   },
 ];
 
-export default function ProductPage() {
+export default async function ProductPage() {
+  const liveProduct = await getLiveProductConfig();
+
   return (
     <div className="bg-ivory pt-24 pb-24 md:pt-28">
       <div className="shell">
@@ -153,7 +155,11 @@ export default function ProductPage() {
           <span className="text-charcoal/70">{product.name}</span>
         </nav>
 
-        <ProductInteractiveSection items={gallery} viewerHref={product.viewerPath} />
+        <ProductInteractiveSection
+          items={gallery}
+          viewerHref={product.viewerPath}
+          initialProduct={liveProduct}
+        />
 
         {/* -------------------------------------------------- editorial body */}
         <section className="mt-24 grid gap-12 lg:grid-cols-[1.08fr_0.92fr]">

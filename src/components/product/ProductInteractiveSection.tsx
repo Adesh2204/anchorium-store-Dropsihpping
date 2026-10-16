@@ -3,17 +3,20 @@
 import { useState } from "react";
 import ProductGallery, { type GalleryItem } from "@/components/product/ProductGallery";
 import BuyPanel from "@/components/product/BuyPanel";
-import { product } from "@/lib/config";
+import { product, type ProductConfig } from "@/lib/config";
 
 export default function ProductInteractiveSection({
   items,
   viewerHref,
+  initialProduct,
 }: {
   items: GalleryItem[];
   viewerHref: string;
+  initialProduct?: ProductConfig;
 }) {
+  const currentProduct = initialProduct ?? product;
   const [variantId, setVariantId] = useState(
-    product.colorVariants.find((v) => v.inStock)?.id ?? product.colorVariants[0].id,
+    currentProduct.colorVariants.find((v) => v.inStock)?.id ?? currentProduct.colorVariants[0].id,
   );
 
   return (
@@ -24,7 +27,7 @@ export default function ProductInteractiveSection({
         selectedVariantId={variantId}
         onSelectVariant={setVariantId}
       />
-      <BuyPanel variantId={variantId} onVariantChange={setVariantId} />
+      <BuyPanel variantId={variantId} onVariantChange={setVariantId} productConfig={currentProduct} />
     </div>
   );
 }

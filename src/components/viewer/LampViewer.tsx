@@ -173,6 +173,7 @@ export default function LampViewer() {
                 add({
                   variantId: selectedVariant.id,
                   variantLabel: selectedVariant.label,
+                  shopifyVariantId: selectedVariant.shopifyVariantId,
                   outletId: product.outlet.id,
                   quantity: 1,
                 })

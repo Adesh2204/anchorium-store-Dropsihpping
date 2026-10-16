@@ -32,6 +32,8 @@ export type CartLine = {
   variantLabel: string;
   outletId: string;
   quantity: number;
+  shopifyVariantId?: string;
+  pricePaise?: number;
 };
 
 export type Totals = {
