@@ -32,7 +32,7 @@ export type CartLine = {
   variantLabel: string;
   outletId: string;
   quantity: number;
-  shopifyVariantId?: string;
+  shopifyVariantId?: string | null;
   pricePaise?: number;
 };
 

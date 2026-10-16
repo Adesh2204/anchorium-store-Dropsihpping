@@ -30,6 +30,7 @@ export type CartContextValue = {
   toast: string | null;
   dismissToast: () => void;
   checkoutUrl: string | null;
+  cartError: string | null;
   isSyncing: boolean;
   proceedToCheckout: () => Promise<void>;
   buyNow: (line: Omit<CartLine, "lineId">) => Promise<void>;
@@ -43,6 +44,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [lines, setLines] = useState<StoredLine[]>([]);
   const [cartId, setCartId] = useState<string | null>(null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
+  const [cartError, setCartError] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -66,11 +68,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
             .filter((l) => l && typeof l.variantId === "string" && typeof l.quantity === "number")
             .map((l) => {
               const matched = product.colorVariants.find((v) => v.id === l.variantId) ?? fallbackVariant;
+              const shopifyVariantId = l.shopifyVariantId || matched.shopifyVariantId || getVariantShopifyId(matched.id) || undefined;
               return {
                 ...l,
                 variantId: matched.id,
                 variantLabel: matched.label,
-                shopifyVariantId: l.shopifyVariantId || matched.shopifyVariantId || getVariantShopifyId(matched.id),
+                shopifyVariantId,
                 quantity: clampQty(l.quantity),
                 lineId: lineKey(matched.id, l.outletId ?? product.outlet.id),
               };
@@ -99,6 +102,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (currentLines.length === 0) {
       setCheckoutUrl(null);
       setCartId(null);
+      setCartError(null);
       try {
         window.localStorage.removeItem(SHOPIFY_CART_KEY);
         window.localStorage.removeItem(SHOPIFY_CHECKOUT_URL_KEY);
@@ -107,9 +111,23 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
 
     setIsSyncing(true);
+    setCartError(null);
+
     try {
+      // Validate that all lines have authentic Shopify variant IDs
+      for (const line of currentLines) {
+        const variantId = line.shopifyVariantId || getVariantShopifyId(line.variantId);
+        if (!variantId) {
+          const msg = `"${line.variantLabel}" is not mapped to an authentic Shopify variant ID.`;
+          setCartError(msg);
+          setCheckoutUrl(null);
+          setIsSyncing(false);
+          return null;
+        }
+      }
+
       const formattedLines = currentLines.map((l) => ({
-        merchandiseId: l.shopifyVariantId || getVariantShopifyId(l.variantId),
+        merchandiseId: (l.shopifyVariantId || getVariantShopifyId(l.variantId)) as string,
         quantity: l.quantity,
       }));
 
@@ -120,36 +138,48 @@ export function CartProvider({ children }: { children: ReactNode }) {
       });
 
       const data = await res.json();
-      if (data?.cart?.checkoutUrl) {
+      if (res.ok && data?.ok && data?.cart?.checkoutUrl) {
         const url = data.cart.checkoutUrl;
         const newId = data.cart.id;
         setCheckoutUrl(url);
         setCartId(newId);
+        setCartError(null);
         try {
           window.localStorage.setItem(SHOPIFY_CART_KEY, newId);
           window.localStorage.setItem(SHOPIFY_CHECKOUT_URL_KEY, url);
         } catch {}
         return url;
+      } else {
+        const errorMsg =
+          data?.error || "Shopify Cart API could not process your cart. Please try again.";
+        setCartError(errorMsg);
+        setCheckoutUrl(null);
+        try {
+          window.localStorage.removeItem(SHOPIFY_CHECKOUT_URL_KEY);
+        } catch {}
+        return null;
       }
-    } catch (err) {
+    } catch (err: any) {
+      const msg = err?.message || "Failed to connect to Shopify. Please check your connection.";
       console.warn("[CartProvider] Failed to sync with Shopify Cart API:", err);
+      setCartError(msg);
+      setCheckoutUrl(null);
+      return null;
     } finally {
       setIsSyncing(false);
     }
-    return null;
   }, []);
 
   // Sync with Shopify whenever lines change and hydrated
   const initialSyncDone = useRef(false);
   useEffect(() => {
     if (!hydrated) return;
-    // Debounce cart sync to avoid spamming the Shopify Cart API
     const timer = setTimeout(() => {
       if (initialSyncDone.current || lines.length > 0) {
         syncWithShopify(lines);
       }
       initialSyncDone.current = true;
-    }, 350);
+    }, 400);
 
     return () => clearTimeout(timer);
   }, [lines, hydrated, syncWithShopify]);
@@ -157,13 +187,21 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const pushToast = useCallback((message: string) => {
     setToast(message);
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 3200);
+    toastTimer.current = setTimeout(() => setToast(null), 3600);
   }, []);
 
   const add = useCallback<CartContextValue["add"]>(
     (line, opts) => {
       const shopifyVariantId =
         line.shopifyVariantId || getVariantShopifyId(line.variantId);
+
+      if (!shopifyVariantId) {
+        pushToast(
+          `Cannot add "${line.variantLabel}" — this colour finish is currently waiting for an authentic Shopify Variant ID.`,
+        );
+        return;
+      }
+
       const id = lineKey(line.variantId, line.outletId);
 
       let nextLines: StoredLine[] = [];
@@ -191,7 +229,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           if (url && typeof window !== "undefined") {
             window.location.href = url;
           } else if (typeof window !== "undefined") {
-            window.location.href = "/checkout";
+            window.location.href = "/cart";
           }
         });
       } else if (target === "cart" && typeof window !== "undefined") {
@@ -207,6 +245,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
     async (line: Omit<CartLine, "lineId">) => {
       const shopifyVariantId =
         line.shopifyVariantId || getVariantShopifyId(line.variantId);
+
+      if (!shopifyVariantId) {
+        pushToast(
+          `Cannot purchase "${line.variantLabel}" — this colour finish does not have an authentic Shopify Variant ID.`,
+        );
+        return;
+      }
+
       const id = lineKey(line.variantId, line.outletId);
       const singleLine = [{ ...line, shopifyVariantId, lineId: id, quantity: line.quantity }];
 
@@ -216,15 +262,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
         if (url && typeof window !== "undefined") {
           window.location.href = url;
           return;
+        } else {
+          pushToast(
+            "Shopify Checkout is currently unreachable. Please check your network or try again.",
+          );
         }
       } catch (err) {
         console.warn("[buyNow] Error creating checkout:", err);
-      }
-      if (typeof window !== "undefined") {
-        window.location.href = "/checkout";
+        pushToast("Unable to reach Shopify Checkout. Please try again.");
       }
     },
-    [syncWithShopify],
+    [pushToast, syncWithShopify],
   );
 
   const proceedToCheckout = useCallback(async () => {
@@ -238,9 +286,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (url) {
       window.location.href = url;
     } else {
-      window.location.href = "/checkout";
+      pushToast("Unable to open Shopify Checkout. Please verify your connection or try again.");
     }
-  }, [checkoutUrl, lines, syncWithShopify]);
+  }, [checkoutUrl, lines, pushToast, syncWithShopify]);
 
   const setQuantity = useCallback((lineId: string, quantity: number) => {
     setLines((prev) =>
@@ -258,6 +306,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setLines([]);
     setCartId(null);
     setCheckoutUrl(null);
+    setCartError(null);
     try {
       window.localStorage.removeItem(STORAGE_KEY);
       window.localStorage.removeItem(SHOPIFY_CART_KEY);
@@ -280,6 +329,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       clear,
       toast,
       checkoutUrl,
+      cartError,
       isSyncing,
       dismissToast: () => setToast(null),
     }),
@@ -295,6 +345,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       clear,
       toast,
       checkoutUrl,
+      cartError,
       isSyncing,
     ],
   );

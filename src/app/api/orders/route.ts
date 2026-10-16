@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getVariantShopifyId } from "@/lib/config";
-import { createShopifyCart } from "@/lib/shopify";
+import { createShopifyCart, isValidShopifyCheckoutUrl } from "@/lib/shopify";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,50 +11,70 @@ type Payload = {
 
 /**
  * Notice: Separate database e-commerce orders are discontinued.
- * Orders and payments are now handled directly through Shopify Checkout.
- * This endpoint converts any cart lines into a Shopify Storefront Cart and returns the secure checkoutUrl.
+ * Checkout is handled securely via Shopify's official hosted checkout.
+ * This endpoint verifies the cart lines and initiates a real Shopify Storefront checkout session.
  */
 export async function POST(request: Request) {
   let payload: Payload;
   try {
     payload = (await request.json()) as Payload;
   } catch {
-    return NextResponse.json({ error: "Malformed request body." }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Malformed request body." }, { status: 400 });
   }
 
   const rawLines = Array.isArray(payload.lines) ? payload.lines : [];
   if (rawLines.length === 0) {
-    return NextResponse.json({ error: "Your cart is empty." }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Your cart is empty." }, { status: 400 });
+  }
+
+  const shopifyLines: { merchandiseId: string; quantity: number }[] = [];
+  for (const l of rawLines) {
+    const variantId = l.shopifyVariantId || getVariantShopifyId(l.variantId);
+    if (!variantId) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: `Selected finish (${l.variantId || "unknown"}) does not have an authentic Shopify variant ID. Purchasing is disabled for unverified options.`,
+          code: "UNAVAILABLE_VARIANT",
+        },
+        { status: 422 },
+      );
+    }
+
+    shopifyLines.push({
+      merchandiseId: variantId,
+      quantity: Math.max(1, Math.floor(Number(l.quantity ?? 1))),
+    });
   }
 
   try {
-    const shopifyLines = rawLines.map((l) => ({
-      merchandiseId: l.shopifyVariantId || getVariantShopifyId(l.variantId),
-      quantity: Math.max(1, Math.floor(Number(l.quantity ?? 1))),
-    }));
+    const result = await createShopifyCart(shopifyLines);
 
-    const cart = await createShopifyCart(shopifyLines);
-    const domain =
-      process.env.SHOPIFY_STORE_DOMAIN ||
-      process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN ||
-      "xuazin-nd.myshopify.com";
-
-    const checkoutUrl = cart?.checkoutUrl || `https://${domain}/cart`;
+    if (!result.cart || !isValidShopifyCheckoutUrl(result.cart.checkoutUrl)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            result.error ||
+            "Unable to generate an authentic Shopify Checkout URL. Please retry or contact support.",
+          userErrors: result.userErrors,
+        },
+        { status: 502 },
+      );
+    }
 
     return NextResponse.json({
       ok: true,
-      message: "Order creation redirected to Shopify Secure Checkout.",
-      checkoutUrl,
-      redirect: checkoutUrl,
+      checkoutUrl: result.cart.checkoutUrl,
     });
   } catch (err: any) {
-    console.error("[/api/orders] Error:", err);
+    console.error("[/api/orders] Shopify Cart creation error:", err);
     return NextResponse.json(
       {
-        error: "Orders are now handled through Shopify Checkout.",
-        checkoutUrl: "/cart",
+        ok: false,
+        error: "Shopify Checkout is currently unreachable. Please retry in a few moments.",
       },
-      { status: 200 },
+      { status: 502 },
     );
   }
 }
@@ -62,6 +82,6 @@ export async function POST(request: Request) {
 export async function GET() {
   return NextResponse.json({
     ok: true,
-    message: "Orders and checkouts are managed directly via Shopify's Storefront Cart API and Checkout.",
+    message: "Ecommerce orders are handled exclusively via Shopify Storefront Cart and Checkout.",
   });
 }

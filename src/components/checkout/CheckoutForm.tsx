@@ -8,9 +8,11 @@ import { formatPaise } from "@/lib/money";
 
 export default function CheckoutForm() {
   const router = useRouter();
-  const { lines, totals, hydrated, checkoutUrl, proceedToCheckout, isSyncing } = useCart();
+  const { lines, totals, hydrated, checkoutUrl, proceedToCheckout, isSyncing, cartError } = useCart();
 
-  const statusMessage = checkoutUrl
+  const statusMessage = cartError
+    ? "Shopify Checkout connection error."
+    : checkoutUrl
     ? "Redirecting to Shopify secure checkout..."
     : isSyncing
     ? "Preparing your cart with Shopify..."
@@ -63,6 +65,13 @@ export default function CheckoutForm() {
         <p className="mt-2 text-sm text-charcoal/65 leading-relaxed">
           {statusMessage}
         </p>
+
+        {cartError ? (
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800 text-left">
+            <p className="font-semibold text-red-900">Checkout Error</p>
+            <p className="mt-0.5">{cartError}</p>
+          </div>
+        ) : null}
 
         <div className="mt-6 rounded-2xl border border-charcoal/8 bg-ivory/60 p-4 text-left">
           <div className="flex justify-between text-sm text-charcoal/70">

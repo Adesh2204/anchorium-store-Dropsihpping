@@ -673,7 +673,7 @@ export default function HomePage() {
                     add({
                       variantId: variant.id,
                       variantLabel: variant.label,
-                      shopifyVariantId: variant.shopifyVariantId,
+                      shopifyVariantId: variant.shopifyVariantId || undefined,
                       outletId: product.outlet.id,
                       quantity: 1,
                     })
@@ -788,7 +788,7 @@ export default function HomePage() {
                       {
                         variantId: variant.id,
                         variantLabel: variant.label,
-                        shopifyVariantId: variant.shopifyVariantId,
+                        shopifyVariantId: variant.shopifyVariantId || undefined,
                         outletId: product.outlet.id,
                         quantity: 1,
                       },

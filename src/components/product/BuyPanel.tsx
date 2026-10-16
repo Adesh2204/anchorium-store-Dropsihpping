@@ -42,6 +42,8 @@ export default function BuyPanel({
 
   const estimate = `${shipping.estimate.minBusinessDays}–${shipping.estimate.maxBusinessDays} business days`;
 
+  const isPurchasable = Boolean(selected.shopifyVariantId && selected.inStock);
+
   return (
     <div className="card !rounded-[1.75rem] p-6 md:p-8">
       <p className="eyebrow text-gold-deep">{currentProduct.campaign.active ? currentProduct.campaign.name : "AuraGlow"}</p>
@@ -51,7 +53,7 @@ export default function BuyPanel({
       <p className="mt-4 text-[0.95rem] leading-relaxed text-charcoal/70">{currentProduct.shortDescription}</p>
 
       <div className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.72rem] text-charcoal/50">
-        <span>In stock · {inStock.length} finishes</span>
+        <span>{inStock.length > 0 ? `In stock · ${inStock.length} finishes` : "Checking Shopify stock"}</span>
         <span aria-hidden>·</span>
         <span>SKU {currentProduct.supplier.sku}</span>
         <span aria-hidden>·</span>
@@ -66,28 +68,31 @@ export default function BuyPanel({
       <fieldset className="mt-7">
         <legend className="field-label">Base finish — 3 authentic colours</legend>
         <div className="mt-1 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-          {currentProduct.colorVariants.map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              disabled={!v.inStock}
-              onClick={() => setVariantId(v.id)}
-              aria-pressed={v.id === variantId}
-              className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left text-sm transition-all duration-300 ${
-                v.id === variantId && v.inStock
-                  ? "border-gold bg-gold/10 shadow-[0_0_0_3px_rgba(214,164,65,.14)]"
-                  : "border-charcoal/12 hover:border-gold/50"
-              } ${!v.inStock ? "cursor-not-allowed opacity-45" : ""}`}
-            >
-              <span className="h-6 w-6 shrink-0 rounded-full ring-1 ring-black/15" style={{ background: v.swatch }} />
-              <span className="min-w-0">
-                <span className="block truncate font-medium text-charcoal">{v.label}</span>
-                <span className="block text-[0.66rem] text-charcoal/50">
-                  {v.inStock ? "In stock" : "Not stocked"}
+          {currentProduct.colorVariants.map((v) => {
+            const variantPurchasable = Boolean(v.shopifyVariantId && v.inStock);
+            return (
+              <button
+                key={v.id}
+                type="button"
+                disabled={!variantPurchasable}
+                onClick={() => setVariantId(v.id)}
+                aria-pressed={v.id === variantId}
+                className={`flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left text-sm transition-all duration-300 ${
+                  v.id === variantId && variantPurchasable
+                    ? "border-gold bg-gold/10 shadow-[0_0_0_3px_rgba(214,164,65,.14)]"
+                    : "border-charcoal/12 hover:border-gold/50"
+                } ${!variantPurchasable ? "cursor-not-allowed opacity-50" : ""}`}
+              >
+                <span className="h-6 w-6 shrink-0 rounded-full ring-1 ring-black/15" style={{ background: v.swatch }} />
+                <span className="min-w-0">
+                  <span className="block truncate font-medium text-charcoal">{v.label}</span>
+                  <span className="block text-[0.66rem] text-charcoal/50">
+                    {variantPurchasable ? "In stock" : !v.shopifyVariantId ? "Unverified ID" : "Out of stock"}
+                  </span>
                 </span>
-              </span>
-            </button>
-          ))}
+              </button>
+            );
+          })}
         </div>
         <p className="mt-3 text-[0.72rem] leading-relaxed text-charcoal/50">
           Select a finish above to preview its studio photograph in the gallery. Each colourway connects directly
@@ -109,21 +114,33 @@ export default function BuyPanel({
       <motion.div className="mt-6 grid gap-3 sm:grid-cols-2" initial={false}>
         <button
           type="button"
-          disabled={!selected.inStock || isSyncing}
+          disabled={!isPurchasable || isSyncing}
           className="btn btn-ink w-full"
           onClick={() => add(line, { redirectTo: "cart" })}
         >
-          Add to cart
+          {isPurchasable ? "Add to cart" : "Unavailable"}
         </button>
         <button
           type="button"
-          disabled={!selected.inStock || isSyncing}
+          disabled={!isPurchasable || isSyncing}
           className="btn btn-gold w-full"
           onClick={() => buyNow(line)}
         >
-          {isSyncing ? "Redirecting..." : `Buy now · ${formatPaise(price.sellPaise)}`}
+          {isSyncing
+            ? "Redirecting..."
+            : isPurchasable
+            ? `Buy now · ${formatPaise(price.sellPaise)}`
+            : "Finish unavailable"}
         </button>
       </motion.div>
+
+      {!isPurchasable ? (
+        <p className="mt-3 text-center text-xs text-amber-800 bg-amber-50 rounded-lg p-2.5 border border-amber-200">
+          {!selected.shopifyVariantId
+            ? "This finish is waiting for an authentic Shopify Variant ID to be published."
+            : "This finish is currently out of stock on Shopify."}
+        </p>
+      ) : null}
 
       {totals.itemCount > 0 ? (
         <Link href="/cart" className="mt-4 block text-center text-[0.72rem] text-charcoal/55 hover:text-gold-deep">

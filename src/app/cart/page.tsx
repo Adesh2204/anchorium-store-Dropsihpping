@@ -9,7 +9,7 @@ import { pricingFor, product, shipping, variantImageFor } from "@/lib/config";
 import { formatPaise, unitMrpPaise, unitSellPaise } from "@/lib/money";
 
 export default function CartPage() {
-  const { lines, totals, setQuantity, remove, clear, hydrated, proceedToCheckout, isSyncing } = useCart();
+  const { lines, totals, setQuantity, remove, clear, hydrated, proceedToCheckout, isSyncing, cartError } = useCart();
   const single = pricingFor(1);
 
   return (
@@ -173,6 +173,13 @@ export default function CartPage() {
               <p className="mt-2 text-right text-[0.7rem] text-charcoal/45">
                 Inclusive of all taxes · Free first-order delivery
               </p>
+
+              {cartError ? (
+                <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800 leading-relaxed">
+                  <p className="font-semibold text-red-900">Checkout Notice</p>
+                  <p className="mt-0.5">{cartError}</p>
+                </div>
+              ) : null}
 
               <button
                 type="button"

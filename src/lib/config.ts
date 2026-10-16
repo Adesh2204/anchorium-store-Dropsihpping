@@ -54,8 +54,15 @@ export type ColorVariant = {
   image: string;
   inStock: boolean;
   priceDeltaPaise: number;
-  shopifyVariantId: string;
+  shopifyVariantId: string | null;
+  purchasable: boolean;
 };
+
+const greyEnv = process.env.NEXT_PUBLIC_SHOPIFY_VARIANT_GREY?.trim();
+const greenEnv = process.env.NEXT_PUBLIC_SHOPIFY_VARIANT_GREEN?.trim();
+const yellowEnv = process.env.NEXT_PUBLIC_SHOPIFY_VARIANT_YELLOW?.trim();
+
+const isNumericGid = (id?: string) => Boolean(id && /^gid:\/\/shopify\/ProductVariant\/\d+$/.test(id));
 
 export const PRODUCT_CONFIG = {
   sku: "CJJT180225502BY",
@@ -103,7 +110,7 @@ export const product = {
     /** Real, fixed configured end date. Do not reset to manufacture urgency. */
     endsAt: "2026-11-11T23:59:59+05:30",
   },
-  /** Authentic base finishes matching the exact color names shown on CJ and mapped to Shopify variants. */
+  /** Authentic base finishes. Purchasing is enabled ONLY when verified against authentic Shopify variant IDs. */
   colorVariants: [
     {
       id: "dark-grey",
@@ -111,11 +118,10 @@ export const product = {
       supplierLabel: "Dark Grey",
       swatch: "#505254",
       image: "/product/04_grey_lamp_studio.png",
-      inStock: true as boolean,
+      inStock: isNumericGid(greyEnv),
+      purchasable: isNumericGid(greyEnv),
       priceDeltaPaise: 0 as number,
-      shopifyVariantId:
-        process.env.NEXT_PUBLIC_SHOPIFY_VARIANT_GREY ||
-        "gid://shopify/ProductVariant/auraglow-dark-grey",
+      shopifyVariantId: isNumericGid(greyEnv) ? (greyEnv as string) : null,
     },
     {
       id: "green",
@@ -123,11 +129,10 @@ export const product = {
       supplierLabel: "Green",
       swatch: "#1D5236",
       image: "/product/02_green_lamp_dimensions.png",
-      inStock: true as boolean,
+      inStock: isNumericGid(greenEnv),
+      purchasable: isNumericGid(greenEnv),
       priceDeltaPaise: 0 as number,
-      shopifyVariantId:
-        process.env.NEXT_PUBLIC_SHOPIFY_VARIANT_GREEN ||
-        "gid://shopify/ProductVariant/auraglow-green",
+      shopifyVariantId: isNumericGid(greenEnv) ? (greenEnv as string) : null,
     },
     {
       id: "yellow",
@@ -135,11 +140,10 @@ export const product = {
       supplierLabel: "Warm Yellow / Light",
       swatch: "#F5B800",
       image: "/product/03_yellow_lamp_studio.png",
-      inStock: true as boolean,
+      inStock: isNumericGid(yellowEnv),
+      purchasable: isNumericGid(yellowEnv),
       priceDeltaPaise: 0 as number,
-      shopifyVariantId:
-        process.env.NEXT_PUBLIC_SHOPIFY_VARIANT_YELLOW ||
-        "gid://shopify/ProductVariant/auraglow-yellow",
+      shopifyVariantId: isNumericGid(yellowEnv) ? (yellowEnv as string) : null,
     },
   ] as ColorVariant[],
   video: "/product/auraglow-showcase.mp4",
@@ -266,13 +270,13 @@ export function variantImageFor(variantId?: string): string {
   return match?.image ?? "/product/01_three_colour_studio_lineup.png";
 }
 
-export function getVariantShopifyId(variantId?: string): string {
+export function getVariantShopifyId(variantId?: string): string | null {
   const match = product.colorVariants.find((v) => v.id === variantId);
-  return (
-    match?.shopifyVariantId ||
-    process.env.NEXT_PUBLIC_SHOPIFY_VARIANT_GREY ||
-    "gid://shopify/ProductVariant/auraglow-dark-grey"
-  );
+  const id = match?.shopifyVariantId;
+  if (id && /^gid:\/\/shopify\/ProductVariant\/\d+$/.test(id.trim())) {
+    return id.trim();
+  }
+  return null;
 }
 
 export type ProductConfig = typeof product;
@@ -280,15 +284,28 @@ export type ProductConfig = typeof product;
 /**
  * Fetch live product prices and stock levels from Shopify.
  * If Shopify returns live data, merges it with the local product configuration.
- * Falls back safely to configured product defaults if offline or Shopify is unreachable.
+ * If a variant is not verified in Shopify, purchasing that variant is strictly disabled.
  */
 export async function getLiveProductConfig(): Promise<ProductConfig> {
   try {
-    const { getShopifyProduct, mapColorToShopifyVariant } = await import("./shopify");
+    const { getShopifyProduct, mapColorToShopifyVariant, isValidShopifyVariantId } = await import("./shopify");
     const liveShopify = await getShopifyProduct(product.slug);
 
     if (!liveShopify) {
-      return product;
+      // Shopify unreachable or product not found — ensure any variant without real GID is unpurchasable
+      const safeVariants = product.colorVariants.map((v) => {
+        const hasValidGid = Boolean(v.shopifyVariantId && isValidShopifyVariantId(v.shopifyVariantId));
+        return {
+          ...v,
+          inStock: hasValidGid,
+          purchasable: hasValidGid,
+          shopifyVariantId: hasValidGid ? v.shopifyVariantId : null,
+        };
+      });
+      return {
+        ...product,
+        colorVariants: safeVariants,
+      };
     }
 
     const liveMinPrice = parseFloat(liveShopify.priceRange.minVariantPrice.amount);
@@ -305,17 +322,19 @@ export async function getLiveProductConfig(): Promise<ProductConfig> {
     }
 
     const updatedVariants = product.colorVariants.map((v) => {
-      const shopifyVariantId = mapColorToShopifyVariant(v.id, liveShopify.variants);
-      const matchedVariant = liveShopify.variants.find((sv) => sv.id === shopifyVariantId);
+      const matchedVariantId = mapColorToShopifyVariant(v.id, liveShopify.variants);
+      const matchedVariant = matchedVariantId
+        ? liveShopify.variants.find((sv) => sv.id === matchedVariantId)
+        : null;
 
-      const inStock = matchedVariant
-        ? Boolean(
-            matchedVariant.availableForSale &&
-              (matchedVariant.quantityAvailable === null ||
-                matchedVariant.quantityAvailable === undefined ||
-                matchedVariant.quantityAvailable > 0),
-          )
-        : v.inStock;
+      const isValid = Boolean(matchedVariant && isValidShopifyVariantId(matchedVariant.id));
+      const inStock = Boolean(
+        isValid &&
+          matchedVariant!.availableForSale &&
+          (matchedVariant!.quantityAvailable === null ||
+            matchedVariant!.quantityAvailable === undefined ||
+            matchedVariant!.quantityAvailable > 0),
+      );
 
       let priceDeltaPaise = v.priceDeltaPaise;
       if (matchedVariant) {
@@ -328,8 +347,9 @@ export async function getLiveProductConfig(): Promise<ProductConfig> {
       return {
         ...v,
         inStock,
+        purchasable: inStock && isValid,
         priceDeltaPaise,
-        shopifyVariantId,
+        shopifyVariantId: isValid ? matchedVariant!.id : null,
       };
     });
 
@@ -343,8 +363,11 @@ export async function getLiveProductConfig(): Promise<ProductConfig> {
       colorVariants: updatedVariants,
     };
   } catch (err) {
-    console.warn("[getLiveProductConfig] Falling back to default product configuration:", err);
-    return product;
+    console.warn("[getLiveProductConfig] Error connecting to Shopify, disabling unverified variant checkout:", err);
+    return {
+      ...product,
+      colorVariants: product.colorVariants.map((v) => ({ ...v, inStock: false, purchasable: false, shopifyVariantId: null })),
+    };
   }
 }
 
